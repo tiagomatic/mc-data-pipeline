@@ -34,13 +34,24 @@ def fetch_logs(url):
         logging.error(f"Failed to fetch logs from {url}")
         return []
 
-def convert_time_to_iso8601(log_event):
-    """ Convert time field in log to ISO 8601 format """
+def process_log_event(log_event):
+    """ Convert log event fields for further processing """
     log_dict = json.loads(log_event)
+
+    # Convert time field to ISO 8601 format
     time_str = log_dict.get('time', '')
-    
     dt = datetime.strptime(time_str, '%d/%b/%Y:%H:%M:%S %z')
     log_dict['time'] = dt.isoformat()
+
+    # Split request into method and path
+    request = log_dict.get('request', '').split()
+    if len(request) >= 2:
+        log_dict['method'] = request[0]
+        log_dict['path'] = request[1]
+    else:
+        log_dict['method'] = None
+        log_dict['path'] = None
+
     return json.dumps(log_dict)
 
 def send_message(channel, queue_name, message):
@@ -67,7 +78,7 @@ def main():
     args = parse_arguments()
     logging.info("Producer is starting up")
     connection = connect_rabbitmq(rabbitmq_params)
-    
+
     if connection:
         channel = connection.channel()
         try:
@@ -77,7 +88,7 @@ def main():
             for i, log_event in enumerate(logs):
                 if args.num is not None and i >= args.num:
                     break
-                formatted_log = convert_time_to_iso8601(log_event)
+                formatted_log = process_log_event(log_event)
                 send_message(channel, 'log_queue', formatted_log)
         finally:
             logging.debug("Closing RabbitMQ connection")
